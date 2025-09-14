@@ -1,87 +1,116 @@
+import os
+import pygame
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import pygame
-import os
 
-class MusicPlayer:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("🎵 My Music Player")
-        self.root.geometry("400x300")
+# Initialize mixer and event system
+pygame.init()
+pygame.mixer.init()
+pygame.mixer.music.set_endevent(pygame.USEREVENT)
 
-        pygame.init()
-        pygame.mixer.init()
+# Main window
+root = tk.Tk()
+root.title("🎵 Minimal Music Player")
+root.geometry("320x360")
+root.resizable(False, False)
 
-        self.playing = False
-        self.paused = False
+# Global state
+playlist = []
+current_index = 0
+is_playing = False
 
-        # Song list
-        self.playlist = []
+# Functions
+def load_folder():
+    global playlist, current_index
+    folder = filedialog.askdirectory()
+    if folder:
+        playlist = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.mp3')]
+        playlist.sort()
+        playlist_box.delete(0, tk.END)
+        for song in playlist:
+            playlist_box.insert(tk.END, os.path.basename(song))
+        if playlist:
+            current_index = 0
+            playlist_box.select_set(current_index)
+            play_song()
 
-        # GUI Components
-        self.song_label = tk.Label(self.root, text="No song loaded", font=("Arial", 12))
-        self.song_label.pack(pady=10)
+def play_song():
+    global is_playing
+    try:
+        pygame.mixer.music.load(playlist[current_index])
+        pygame.mixer.music.play()
+        is_playing = True
+        update_label(f"▶️ {os.path.basename(playlist[current_index])}")
+        playlist_box.select_clear(0, tk.END)
+        playlist_box.select_set(current_index)
+    except Exception as e:
+        update_label("❌ Error playing file")
+        messagebox.showerror("Playback Error", f"Could not play:\n{playlist[current_index]}\n\n{e}")
 
-        self.listbox = tk.Listbox(self.root, bg="lightgray", width=50)
-        self.listbox.pack(pady=10)
+def toggle_play_pause():
+    global is_playing
+    if is_playing:
+        pygame.mixer.music.pause()
+        is_playing = False
+        update_label("⏸️ Paused")
+    else:
+        pygame.mixer.music.unpause()
+        is_playing = True
+        update_label(f"▶️ {os.path.basename(playlist[current_index])}")
 
-        # Buttons
-        controls = tk.Frame(self.root)
-        controls.pack(pady=10)
+def next_song():
+    global current_index
+    if playlist:
+        current_index = (current_index + 1) % len(playlist)
+        play_song()
 
-        tk.Button(controls, text="▶ Play", width=8, command=self.play_song).grid(row=0, column=0, padx=5)
-        tk.Button(controls, text="⏸ Pause", width=8, command=self.pause_song).grid(row=0, column=1, padx=5)
-        tk.Button(controls, text="⏹ Stop", width=8, command=self.stop_song).grid(row=0, column=2, padx=5)
-        tk.Button(self.root, text="📂 Load Songs", command=self.load_songs).pack(pady=10)
+def prev_song():
+    global current_index
+    if playlist:
+        current_index = (current_index - 1) % len(playlist)
+        play_song()
 
-    def load_songs(self):
-        folder = filedialog.askdirectory()
-        if not folder:
-            return
+def update_label(text):
+    song_label.config(text=text)
 
-        self.playlist = []
-        self.listbox.delete(0, tk.END)
+def set_volume(val):
+    volume = float(val) / 100
+    pygame.mixer.music.set_volume(volume)
 
-        for file in os.listdir(folder):
-            if file.endswith(".mp3"):
-                full_path = os.path.join(folder, file)
-                self.playlist.append(full_path)
-                self.listbox.insert(tk.END, file)
+def select_song(event):
+    global current_index
+    selection = playlist_box.curselection()
+    if selection:
+        current_index = selection[0]
+        play_song()
 
-        if self.playlist:
-            self.song_label.config(text="Songs loaded. Select a song to play.")
+def check_music_event():
+    for event in pygame.event.get():
+        if event.type == pygame.USEREVENT:
+            next_song()
+    root.after(1000, check_music_event)
 
-    def play_song(self):
-        try:
-            selected_index = self.listbox.curselection()
-            if not selected_index:
-                messagebox.showinfo("No song selected", "Please select a song to play.")
-                return
+# UI Elements
+song_label = tk.Label(root, text="📂 Load music folder", wraplength=280, font=("Arial", 11))
+song_label.pack(pady=10)
 
-            song_path = self.playlist[selected_index[0]]
-            pygame.mixer.music.load(song_path)
-            pygame.mixer.music.play()
-            self.song_label.config(text=f"Now Playing: {os.path.basename(song_path)}")
-            self.paused = False
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+playlist_box = tk.Listbox(root, height=6, width=40)
+playlist_box.pack(pady=5)
+playlist_box.bind("<<ListboxSelect>>", select_song)
 
-    def pause_song(self):
-        if pygame.mixer.music.get_busy():
-            if not self.paused:
-                pygame.mixer.music.pause()
-                self.paused = True
-                self.song_label.config(text="Paused")
-            else:
-                pygame.mixer.music.unpause()
-                self.paused = False
-                self.song_label.config(text="Resumed")
+btn_frame = tk.Frame(root)
+btn_frame.pack(pady=5)
 
-    def stop_song(self):
-        pygame.mixer.music.stop()
-        self.song_label.config(text="Stopped")
+tk.Button(btn_frame, text="⏮️", font=("Arial", 14), width=4, command=prev_song).grid(row=0, column=0, padx=5)
+tk.Button(btn_frame, text="▶️/⏸️", font=("Arial", 14), width=6, command=toggle_play_pause).grid(row=0, column=1, padx=5)
+tk.Button(btn_frame, text="⏭️", font=("Arial", 14), width=4, command=next_song).grid(row=0, column=2, padx=5)
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = MusicPlayer(root)
-    root.mainloop()
+tk.Button(root, text="📂 Load Folder", command=load_folder).pack(pady=10)
+
+volume_slider = tk.Scale(root, from_=0, to=100, orient=tk.HORIZONTAL, label="🔊 Volume", command=set_volume)
+volume_slider.set(70)
+volume_slider.pack(pady=5)
+
+# Start event loop
+check_music_event()
+root.mainloop()
